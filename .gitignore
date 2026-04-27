@@ -8,6 +8,10 @@ dist/
 # Test sandbox
 .test-env/
 
+# apps/ is tracked as an empty drop-folder; never commit its contents
+apps/*
+!apps/.gitkeep
+
 # Environment / secrets
 .env
 .env.*

@@ -13,9 +13,34 @@ Das öffnet:
 - Den **Test-Server** auf http://localhost:3000 (UserApp-Sandbox + Frontend-Hosting)
 - Die **Debug-UI** auf http://localhost:5173 (React-SPA für Event-Simulation)
 
-## UserApp ablegen
+## UserApp registrieren
 
-Lege deine App im Ordner `apps/<app-id>/` ab — wie ein FTP-Upload:
+### Externe Ordner (empfohlen)
+
+Die UserApp bleibt in ihrem eigenen Projektordner — egal wo auf der Platte, mit
+eigenem Git-Repo, eigener Build-Pipeline. Du registrierst nur den Pfad, der
+Watcher zieht Änderungen live rein. Kein Kopieren, keine Symlinks, kein
+Vermischen mit dem Server-Repo.
+
+Drei Wege, einen Pfad zu registrieren:
+
+1. **Debug-UI → Apps-Panel → "Externen Ordner hinzufügen"**
+   Nativer Folder-Picker, Auswahl wird in `.test-env/external-apps.json`
+   persistiert und beim nächsten Start automatisch wieder eingehängt.
+2. **Env-Var `KS_EXTERNAL_APPS`** (komma-separierte absolute Pfade) —
+   ideal für Team-Setups oder CI:
+   ```bash
+   KS_EXTERNAL_APPS=/Users/me/work/my-app,/Users/me/work/other-app npm run dev
+   ```
+3. **Direkt die JSON editieren** — `.test-env/external-apps.json`.
+
+Der App-Ordner braucht eine `app.config` mit `appName=...`; der `appName` wird
+zur App-ID, unter der die App im Server registriert wird.
+
+### `apps/`-Ordner (Fallback, FTP-Style)
+
+Wer keinen externen Ordner nutzen will, kann eine App direkt unter
+`apps/<app-id>/` ablegen — wie ein FTP-Upload:
 
 ```
 apps/
@@ -26,7 +51,10 @@ apps/
         └── index.html   # Frontend
 ```
 
-Änderungen werden per Watcher automatisch neu geladen.
+Inhalte von `apps/` sind per `.gitignore` ausgeschlossen, der Ordner selbst
+bleibt versioniert (via `.gitkeep`).
+
+In beiden Fällen lädt der Watcher Änderungen automatisch neu.
 
 ## Was simuliert werden kann
 
@@ -36,7 +64,7 @@ apps/
 - Slash-Commands (`/...`) triggern
 - Beliebige `appEvent`-Frames vom Frontend simulieren
 - AppContent-Frame im iframe öffnen + Frontend-↔-Backend-Events live verfolgen
-- Persistenz-JSON (`/.test-env/persistence/<appId>.json`) live einsehen + editieren
+- Persistenz-JSON (`.test-env/persistence/<appId>.json`) live einsehen + editieren
 
 ## Nicht-Ziele
 
