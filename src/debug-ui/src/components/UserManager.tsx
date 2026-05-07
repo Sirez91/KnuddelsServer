@@ -60,7 +60,18 @@ export function UserManager() {
             {users.map(u => (
               <tr key={u.userId}>
                 <td className="muted">{u.userId}</td>
-                <td><strong>{u.nick}</strong></td>
+                <td>
+                  <strong>{u.nick}</strong>
+                  {u.nicklistIcons && Object.entries(u.nicklistIcons).flatMap(([appId, icons]) =>
+                    icons.map((icon, i) => (
+                      <img key={`${appId}:${i}:${icon.imagePath}`}
+                           src={`/app/${appId}/${icon.imagePath}`}
+                           title={`${appId}: ${icon.imagePath}`}
+                           style={{ width: icon.imageWidth, height: icon.imageWidth, marginLeft: 4, verticalAlign: 'middle' }}
+                           onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                    ))
+                  )}
+                </td>
                 <td>{u.userType}</td>
                 <td>{u.status}</td>
                 <td>{u.gender}</td>

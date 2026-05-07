@@ -257,9 +257,24 @@ export function buildApi(appRec: AppRecord) {
       transferKnuddelToApp: (_amount: any, _reason: string, params?: any) => {
         params?.onSuccess?.();
       },
-      triggerDice: () => { /* noop in sim */ },
-      addNicklistIcon: () => {},
-      removeNicklistIcon: () => {},
+      triggerDice: (diceConfiguration: any) => triggerDiceFor(sim, diceConfiguration),
+      addNicklistIcon: (imagePath: string, imageWidth: number) => {
+        sim.nicklistIcons = sim.nicklistIcons ?? {};
+        const list = sim.nicklistIcons[appId] ?? (sim.nicklistIcons[appId] = []);
+        if (!list.some(e => e.imagePath === imagePath)) {
+          list.push({ imagePath, imageWidth });
+          world.emitChange();
+        }
+      },
+      removeNicklistIcon: (imagePath: string) => {
+        const list = sim.nicklistIcons?.[appId];
+        if (!list) return;
+        const idx = list.findIndex(e => e.imagePath === imagePath);
+        if (idx === -1) return;
+        list.splice(idx, 1);
+        if (list.length === 0) delete sim.nicklistIcons![appId];
+        world.emitChange();
+      },
       sendPostMessage: (topic: string, text: string) => {
         world.chat({ ts: Date.now(), appId, kind: 'post', fromUserId: appRec.persistence.appId === appId ? -1 : -1, toUserIds: [sim.userId], text: `[${topic}] ${text}` });
       },
@@ -334,6 +349,14 @@ export function buildApi(appRec: AppRecord) {
       try { off(); } catch {}
     }
     ownWorldListenerOffs.length = 0;
+    let nicklistDirty = false;
+    for (const u of world.users.values()) {
+      if (u.nicklistIcons?.[appId]) {
+        delete u.nicklistIcons[appId];
+        nicklistDirty = true;
+      }
+    }
+    if (nicklistDirty) world.emitChange();
   };
 
   function usersInChannel(): SimUser[] {
@@ -383,12 +406,29 @@ export function buildApi(appRec: AppRecord) {
     const closeListeners: ((user: any, content: any, replacing: boolean) => void)[] = [];
     let responsive = false;
     const ownSessions: any[] = [];
+    const loadConfigState = {
+      enabled: true,
+      backgroundColor: null as string | null,
+      backgroundImage: '',
+      loadingIndicatorImage: '',
+      foregroundColor: null as string | null,
+      text: '',
+    };
+    const loadConfig = {
+      setEnabled: (b: boolean) => { loadConfigState.enabled = !!b; },
+      setBackgroundColor: (c: any) => { loadConfigState.backgroundColor = c?.asHexString?.() ?? null; },
+      setBackgroundImage: (url: string) => { loadConfigState.backgroundImage = String(url ?? ''); },
+      setLoadingIndicatorImage: (url: string) => { loadConfigState.loadingIndicatorImage = String(url ?? ''); },
+      setForegroundColor: (c: any) => { loadConfigState.foregroundColor = c?.asHexString?.() ?? null; },
+      setText: (t: string) => { loadConfigState.text = String(t ?? ''); },
+    };
     const content: any = {
       __isAppContent: true,
       __htmlFile: htmlFile,
       __mode: mode,
       __width: width,
       __height: height,
+      __loadConfigState: loadConfigState,
       getHTMLFile: () => htmlFile,
       getAppViewMode: () => (AppViewMode as any)[mode],
       getWidth: () => width,
@@ -437,11 +477,6 @@ export function buildApi(appRec: AppRecord) {
     return content;
   }
 
-  const loadConfig = {
-    setEnabled: () => {}, setBackgroundColor: () => {}, setBackgroundImage: () => {},
-    setLoadingIndicatorImage: () => {}, setForegroundColor: () => {}, setText: () => {},
-  };
-
   const AppContent = {
     popupContent: (html: HTMLFile, w?: number, h?: number) => makeAppContent(html, 'Popup', w ?? 400, h ?? 300),
     overlayContent: (html: HTMLFile, w?: number, h?: number) => makeAppContent(html, 'Overlay', w ?? 400, h ?? 300),
@@ -479,6 +514,7 @@ export function buildApi(appRec: AppRecord) {
       responsive: content.isResponsive(),
       assetPath: html.getAssetPath(),
       pageData: html.getPageData() as Record<string, unknown>,
+      loadConfig: content.__loadConfigState ? { ...content.__loadConfigState } : undefined,
     };
     world.appContentShown(spec);
     return session;
@@ -577,17 +613,18 @@ export function buildApi(appRec: AppRecord) {
   };
 
   const globalApps = new Map<string, any>();
-  function makeGlobalAppInstance(cfg: any) {
+  function makeGlobalAppInstance(initialCfg: any) {
+    let cfg = initialCfg;
     const sessions: any[] = [];
     const instance: any = {
       getAppConfig: () => cfg,
-      setAppConfig: () => {},
+      setAppConfig: (newCfg: any) => { cfg = newCfg; },
       getAddAsFavoriteChatCommand: () => '/addfav',
       getOpenAppChatCommand: () => '/openapp',
       getRemoveAsFavoriteChatCommand: () => '/removefav',
       closeActiveSessions: () => sessions.splice(0, sessions.length),
       getActiveSessions: () => sessions.slice(),
-      getActiveSession: () => null,
+      getActiveSession: () => sessions[0] ?? null,
       hasAsFavorite: () => false,
       openGlobalApp: (user: any) => {
         const handler = cfg.getOpenRequestHandler?.();
@@ -693,6 +730,16 @@ export function buildApi(appRec: AppRecord) {
   };
 
   // ============================== Toplist ==============================
+  // Per-toplist listener registries — keyed by the toplist's userPersistenceNumberKey.
+  type RankListener = (e: any) => void;
+  type LabelListener = (e: any) => void;
+  const toplistListeners = new Map<string, { rank: RankListener[]; label: LabelListener[] }>();
+  function listenersFor(key: string) {
+    let l = toplistListeners.get(key);
+    if (!l) { l = { rank: [], label: [] }; toplistListeners.set(key, l); }
+    return l;
+  }
+
   const toplistAccess = {
     createOrUpdateToplist: (key: string, name: string, params: any = {}) => {
       appRec.toplists.set(key, {
@@ -706,43 +753,164 @@ export function buildApi(appRec: AppRecord) {
     getToplist: (key: string) => makeToplist(key, appRec.toplists.get(key)?.displayName ?? key),
     removeToplist: (tl: any) => appRec.toplists.delete(tl.getUserPersistenceNumberKey()),
   };
+  function computeLabel(key: string, value: number): string {
+    const cfg = appRec.toplists.get(key);
+    if (!cfg?.labelMapping) return '';
+    const thresholds = Object.keys(cfg.labelMapping)
+      .map(t => parseFloat(t))
+      .filter(n => !Number.isNaN(n))
+      .sort((a, b) => a - b);
+    let label = '';
+    for (const t of thresholds) {
+      if (value >= t) label = cfg.labelMapping[String(t)] ?? cfg.labelMapping[t.toString()] ?? label;
+      else break;
+    }
+    return label;
+  }
+  function getRankFromSnapshot(key: string, userId: number, snap: Record<string, any>): { rank: number; value: number } {
+    const cfg = appRec.toplists.get(key);
+    const ascending = cfg?.ascending ?? false;
+    const list: { userId: number; value: number }[] = [];
+    for (const [k, slot] of Object.entries(snap)) {
+      const m = /^user:(\d+):(.+)$/.exec(k);
+      if (m && m[2] === key && slot?.kind === 'number') {
+        list.push({ userId: parseInt(m[1]!, 10), value: slot.value });
+      }
+    }
+    list.sort((a, b) => ascending ? a.value - b.value : b.value - a.value);
+    const idx = list.findIndex(e => e.userId === userId);
+    return { rank: idx === -1 ? 0 : idx + 1, value: idx === -1 ? 0 : list[idx]!.value };
+  }
   function makeToplist(key: string, displayName: string) {
-    return {
+    const tlObj: any = {
       getUserPersistenceNumberKey: () => key,
       getDisplayName: () => displayName,
       getLabel: (userOrId: any) => {
-        const cfg = appRec.toplists.get(key);
-        if (!cfg?.labelMapping) return '';
         const userId = typeof userOrId === 'number' ? userOrId : userOrId?.getUserId?.();
         if (typeof userId !== 'number') return '';
         const slot = store.snapshot()[store.userKeyOf(userId, key)];
         if (slot?.kind !== 'number') return '';
-        const value = slot.value;
-        const thresholds = Object.keys(cfg.labelMapping)
-          .map(t => parseFloat(t))
-          .filter(n => !Number.isNaN(n))
-          .sort((a, b) => a - b);
-        let label = '';
-        for (const t of thresholds) {
-          if (value >= t) label = cfg.labelMapping[String(t)] ?? cfg.labelMapping[t.toString()] ?? label;
-          else break;
-        }
-        return label;
+        return computeLabel(key, slot.value);
       },
       getChatCommand: () => `/toplist ${key}`,
-      addRankChangeListener: () => {},
-      removeRankChangeListener: () => {},
-      addLabelChangeListener: () => {},
-      removeLabelChangeListener: () => {},
+      addRankChangeListener: (cb: RankListener) => { listenersFor(key).rank.push(cb); },
+      removeRankChangeListener: (cb: RankListener) => {
+        const arr = listenersFor(key).rank;
+        const idx = arr.indexOf(cb);
+        if (idx !== -1) arr.splice(idx, 1);
+      },
+      addLabelChangeListener: (cb: LabelListener) => { listenersFor(key).label.push(cb); },
+      removeLabelChangeListener: (cb: LabelListener) => {
+        const arr = listenersFor(key).label;
+        const idx = arr.indexOf(cb);
+        if (idx !== -1) arr.splice(idx, 1);
+      },
     };
+    return tlObj;
+  }
+
+  // Wire up Store onChange to drive toplist rank/label listeners. We snapshot
+  // BEFORE the mutation by remembering the prior slot, then recompute rank/label
+  // for the affected user using the AFTER-snapshot. The "users overtook" set is
+  // the difference between the user's new and old neighbors in the sorted list.
+  const previousStoreOnChange = store.onChange;
+  store.onChange = (scopedKey, oldSlot, newSlot) => {
+    previousStoreOnChange?.(scopedKey, oldSlot, newSlot);
+    const m = /^user:(\d+):(.+)$/.exec(scopedKey);
+    if (!m) return;
+    const userId = parseInt(m[1]!, 10);
+    const tlKey = m[2]!;
+    const ls = toplistListeners.get(tlKey);
+    if (!ls || (ls.rank.length === 0 && ls.label.length === 0)) return;
+    const oldValue = oldSlot?.kind === 'number' ? oldSlot.value : null;
+    const newValue = newSlot?.kind === 'number' ? newSlot.value : null;
+    if (oldValue === newValue) return;
+    const afterSnap = store.snapshot();
+    const beforeSnap: Record<string, any> = { ...afterSnap };
+    if (oldSlot) beforeSnap[scopedKey] = oldSlot; else delete beforeSnap[scopedKey];
+    const before = getRankFromSnapshot(tlKey, userId, beforeSnap);
+    const after = getRankFromSnapshot(tlKey, userId, afterSnap);
+    const tl = makeToplist(tlKey, appRec.toplists.get(tlKey)?.displayName ?? tlKey);
+    if (before.rank !== after.rank && ls.rank.length > 0) {
+      const overtookIds = computeOvertaken(tlKey, userId, before.rank, after.rank, beforeSnap, afterSnap);
+      const event: any = {
+        getUser: () => getUserById(userId),
+        getToplist: () => tl,
+        getOldRank: () => before.rank,
+        getNewRank: () => after.rank,
+        getOldValue: () => before.value,
+        getNewValue: () => after.value,
+        getUsersOvertook: () => overtookIds.map(id => getUserById(id)),
+      };
+      for (const cb of ls.rank.slice()) {
+        try { cb(event); } catch (e: any) { Logger.error('rankChangeListener threw', e?.message ?? e); }
+      }
+    }
+    if (ls.label.length > 0) {
+      const oldLabel = oldValue === null ? '' : computeLabel(tlKey, oldValue);
+      const newLabel = newValue === null ? '' : computeLabel(tlKey, newValue);
+      if (oldLabel !== newLabel) {
+        const event: any = {
+          getUser: () => getUserById(userId),
+          getToplist: () => tl,
+          getOldLabel: () => oldLabel,
+          getNewLabel: () => newLabel,
+          getOldValue: () => before.value,
+          getNewValue: () => after.value,
+        };
+        for (const cb of ls.label.slice()) {
+          try { cb(event); } catch (e: any) { Logger.error('labelChangeListener threw', e?.message ?? e); }
+        }
+      }
+    }
+  };
+  ownWorldListenerOffs.push(() => { store.onChange = previousStoreOnChange; });
+
+  function computeOvertaken(tlKey: string, userId: number, oldRank: number, newRank: number, beforeSnap: Record<string, any>, afterSnap: Record<string, any>): number[] {
+    if (newRank >= oldRank) return [];
+    const cfg = appRec.toplists.get(tlKey);
+    const ascending = cfg?.ascending ?? false;
+    const collect = (snap: Record<string, any>): { userId: number; value: number }[] => {
+      const out: { userId: number; value: number }[] = [];
+      for (const [k, slot] of Object.entries(snap)) {
+        const mm = /^user:(\d+):(.+)$/.exec(k);
+        if (mm && mm[2] === tlKey && slot?.kind === 'number') {
+          out.push({ userId: parseInt(mm[1]!, 10), value: slot.value });
+        }
+      }
+      out.sort((a, b) => ascending ? a.value - b.value : b.value - a.value);
+      return out;
+    };
+    const beforeAhead = new Set(collect(beforeSnap).slice(0, oldRank - 1).map(e => e.userId));
+    const afterAhead = new Set(collect(afterSnap).slice(0, newRank - 1).map(e => e.userId));
+    const overtaken: number[] = [];
+    for (const id of beforeAhead) if (!afterAhead.has(id) && id !== userId) overtaken.push(id);
+    return overtaken;
   }
 
   // ============================== AppProfileEntryAccess ==============================
   const appProfileEntryAccess = {
-    createOrUpdateEntry: (toplist: any, displayType: any) => makeAppProfileEntry(toplist, displayType),
-    removeEntry: () => {},
-    getAppProfileEntry: (key: string) => makeAppProfileEntry(makeToplist(key, key), ToplistDisplayType.Value),
-    getAllProfileEntries: () => [],
+    createOrUpdateEntry: (toplist: any, displayType: any) => {
+      const key = toplist.getUserPersistenceNumberKey?.() ?? '';
+      appRec.profileEntries.set(key, { displayType: displayType?.name ?? 'Value' });
+      return makeAppProfileEntry(toplist, displayType);
+    },
+    removeEntry: (entry: any) => {
+      const key = entry?.getKey?.();
+      if (typeof key === 'string') appRec.profileEntries.delete(key);
+    },
+    getAppProfileEntry: (key: string) => {
+      const stored = appRec.profileEntries.get(key);
+      if (!stored) return null;
+      const tlName = appRec.toplists.get(key)?.displayName ?? key;
+      const dt = (ToplistDisplayType as any)[stored.displayType] ?? ToplistDisplayType.Value;
+      return makeAppProfileEntry(makeToplist(key, tlName), dt);
+    },
+    getAllProfileEntries: () => Array.from(appRec.profileEntries.entries()).map(([key, stored]) => {
+      const tlName = appRec.toplists.get(key)?.displayName ?? key;
+      const dt = (ToplistDisplayType as any)[stored.displayType] ?? ToplistDisplayType.Value;
+      return makeAppProfileEntry(makeToplist(key, tlName), dt);
+    }),
   };
   function makeAppProfileEntry(toplist: any, displayType: any) {
     return {
@@ -1033,14 +1201,63 @@ export function buildApi(appRec: AppRecord) {
     fromString: (s: string) => makeDiceConfig(s),
   };
   function makeDiceConfig(s = '1w6'): any {
+    const dices: Dice[] = [];
+    for (const part of String(s).split('+')) {
+      const m = /^(\d+)\s*[wWdD]\s*(\d+)$/.exec(part.trim());
+      if (m) dices.push(new Dice(parseInt(m[1]!, 10), parseInt(m[2]!, 10)));
+    }
+    if (dices.length === 0) dices.push(new Dice(1, 6));
     return {
       isUsingPrivateThrow: () => false,
       isUsingOpenThrow: () => true,
-      getDices: () => [new Dice(1, 6)],
+      getDices: () => dices.slice(),
       getChatCommand: () => `/dice ${s}`,
       equals: () => false,
       toString: () => s,
     };
+  }
+
+  function triggerDiceFor(sim: SimUser, diceConfiguration: any): void {
+    if (!diceConfiguration?.getDices) return;
+    const dices: Dice[] = diceConfiguration.getDices();
+    const singleResults: any[] = [];
+    let totalSum = 0;
+    for (const dice of dices) {
+      const sides = dice.getNumberOfSides();
+      const amount = dice.getAmount();
+      const rolls: number[] = [];
+      let sum = 0;
+      for (let i = 0; i < amount; i++) {
+        const v = Math.floor(Math.random() * sides) + 1;
+        rolls.push(v);
+        sum += v;
+      }
+      totalSum += sum;
+      singleResults.push({
+        valuesRolled: () => rolls.slice(),
+        getDice: () => dice,
+        sum: () => sum,
+      });
+    }
+    const diceResult: any = {
+      totalSum: () => totalSum,
+      getDiceConfiguration: () => diceConfiguration,
+      getSingleDiceResults: () => singleResults.slice(),
+      toString: () => `${diceConfiguration.toString?.() ?? ''} = ${totalSum}`,
+    };
+    const diceEvent: any = {
+      getDiceResult: () => diceResult,
+      getUser: () => getUserById(sim.userId),
+    };
+    const mayDice = appRec.app?.mayUserDice?.(getUserById(sim.userId), diceConfiguration);
+    if (mayDice === false) return;
+    world.chat({
+      ts: Date.now(), appId, kind: 'action',
+      fromUserId: sim.userId,
+      text: `würfelt ${diceConfiguration.toString?.() ?? ''} = ${totalSum} (${singleResults.map(r => r.valuesRolled().join(',')).join(' | ')})`,
+    });
+    try { appRec.app?.onUserDiced?.(diceEvent); }
+    catch (e: any) { Logger.error('onUserDiced threw', e?.message ?? e); }
   }
 
   // ============================== KnuddelsServer namespace ==============================
@@ -1080,7 +1297,17 @@ export function buildApi(appRec: AppRecord) {
       exec?.(fileName);
     },
     refreshHooks: () => {},
-    registerInAppChatMessage: (_groupId: string, _sender: any, _text: string, _ids: number[]) => {},
+    registerInAppChatMessage: (chatGroupId: string, sender: any, text: string, receiverIds: number[]) => {
+      world.chat({
+        ts: Date.now(),
+        appId,
+        kind: 'in-app',
+        fromUserId: sender?.getUserId?.() ?? -1,
+        toUserIds: Array.isArray(receiverIds) ? receiverIds : [],
+        text,
+        chatGroupId,
+      });
+    },
     getPerformanceStats: () => [],
   };
 

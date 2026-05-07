@@ -13,6 +13,11 @@ export type SimUser = {
   isChannelOwner: boolean;
   /** True if this user is an App-Manager (developer/admin of the app). */
   isAppManager: boolean;
+  /**
+   * Per-app nicklist icons set via `User.addNicklistIcon`. Outer key = appId,
+   * each entry one icon registration. Cleared when the owning app is unloaded.
+   */
+  nicklistIcons?: { [appId: string]: { imagePath: string; imageWidth: number }[] };
 };
 
 export type AppContentSpec = {
@@ -35,6 +40,17 @@ export type AppContentSpec = {
   backgroundColorTransitionMs?: number;
   iconUrl?: string;
   title?: string;
+  /** Loading-screen configuration set via `AppContent.getLoadConfiguration()`. */
+  loadConfig?: LoadConfigSpec;
+};
+
+export type LoadConfigSpec = {
+  enabled: boolean;
+  backgroundColor: string | null;
+  backgroundImage: string;
+  loadingIndicatorImage: string;
+  foregroundColor: string | null;
+  text: string;
 };
 
 export type LogEntry = {
@@ -47,10 +63,12 @@ export type LogEntry = {
 export type ChatLogEntry = {
   ts: number;
   appId: string;
-  kind: 'public' | 'private' | 'action' | 'event' | 'post';
+  kind: 'public' | 'private' | 'action' | 'event' | 'post' | 'in-app';
   fromUserId: number;
   toUserIds?: number[];
   text: string;
+  /** Only set for kind === 'in-app': the chat-group identifier passed by the app. */
+  chatGroupId?: string;
 };
 
 export type AppRecord = {
@@ -64,6 +82,8 @@ export type AppRecord = {
   sessions: Map<string, AppContentSpec>;
   // Toplists registered by the app:
   toplists: Map<string, { displayName: string; ascending: boolean; labelMapping?: { [minValue: string]: string } }>;
+  // AppProfileEntries registered by the app, keyed by their toplist key:
+  profileEntries: Map<string, { displayType: string }>;
 };
 
 class World extends EventEmitter {

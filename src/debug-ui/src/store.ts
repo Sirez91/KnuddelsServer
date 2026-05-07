@@ -11,6 +11,7 @@ export type SimUser = {
   isInChannel: boolean;
   isChannelOwner: boolean;
   isAppManager: boolean;
+  nicklistIcons?: { [appId: string]: { imagePath: string; imageWidth: number }[] };
 };
 
 export type AppContentSpec = {
@@ -32,6 +33,14 @@ export type AppContentSpec = {
   backgroundColorTransitionMs?: number;
   iconUrl?: string;
   title?: string;
+  loadConfig?: {
+    enabled: boolean;
+    backgroundColor: string | null;
+    backgroundImage: string;
+    loadingIndicatorImage: string;
+    foregroundColor: string | null;
+    text: string;
+  };
 };
 
 export type AppSnap = {
@@ -59,10 +68,11 @@ export type LogEntry = {
 export type ChatLogEntry = {
   ts: number;
   appId: string;
-  kind: 'public' | 'private' | 'action' | 'event' | 'post';
+  kind: 'public' | 'private' | 'action' | 'event' | 'post' | 'in-app';
   fromUserId: number;
   toUserIds?: number[];
   text: string;
+  chatGroupId?: string;
 };
 
 type State = {

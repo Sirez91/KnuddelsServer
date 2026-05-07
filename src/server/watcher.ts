@@ -392,6 +392,7 @@ export function loadOrReload(appId: string): void {
     persistence: new PersistenceStore(appId),
     sessions: new Map(),
     toplists: new Map(),
+    profileEntries: new Map(),
   };
   world.apps.set(appId, rec);
 

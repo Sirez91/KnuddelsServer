@@ -47,6 +47,8 @@ export function AppContentFrame({ spec }: { spec: AppContentSpec }) {
       : undefined,
   };
   const titleLabel = spec.title || `${spec.appId}/${spec.sessionId}`;
+  const lc = spec.loadConfig;
+  const showLoadBanner = lc && lc.enabled && (lc.text || lc.backgroundColor || lc.foregroundColor || lc.backgroundImage || lc.loadingIndicatorImage);
 
   return (
     <div className="app-frame">
@@ -62,6 +64,25 @@ export function AppContentFrame({ spec }: { spec: AppContentSpec }) {
           <button onClick={() => postJson('/api/debug/closeSession', { sessionId: spec.sessionId })}>×</button>
         </span>
       </div>
+      {showLoadBanner && (
+        <div className="frame-header" style={{
+          background: lc!.backgroundColor ?? undefined,
+          color: lc!.foregroundColor ?? undefined,
+          backgroundImage: lc!.backgroundImage ? `url(/app/${encodeURIComponent(spec.appId)}/${lc!.backgroundImage})` : undefined,
+          backgroundSize: 'cover',
+          fontStyle: 'italic',
+        }}>
+          <span>
+            <span className="pill">LoadConfig</span>
+            {lc!.loadingIndicatorImage && (
+              <img src={`/app/${encodeURIComponent(spec.appId)}/${lc!.loadingIndicatorImage}`}
+                   alt="" style={{ height: 16, marginLeft: 6, verticalAlign: 'middle' }}
+                   onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+            )}
+            {' '}{lc!.text || <em>(kein Text)</em>}
+          </span>
+        </div>
+      )}
       <iframe ref={ref}
               key={reloadKey}
               src={url}
