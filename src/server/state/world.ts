@@ -25,6 +25,16 @@ export type AppContentSpec = {
   responsive: boolean;
   assetPath: string;
   pageData: Record<string, unknown>;
+  // Mutable frame-level state set by the iframe via `Client.getHostFrame().*`.
+  minWidth?: number;
+  minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  resizable?: boolean;
+  backgroundColor?: string;
+  backgroundColorTransitionMs?: number;
+  iconUrl?: string;
+  title?: string;
 };
 
 export type LogEntry = {
@@ -68,6 +78,9 @@ class World extends EventEmitter {
   private nextSessionId = 1;
   // user id sequence (for ad-hoc creation)
   nextUserId = 100;
+  // monotonic per-app version, bumped on every frontend change. Used to power
+  // a stable `Client.getCacheInvalidationId()` per iframe load.
+  private frontendVersions: Map<string, number> = new Map();
 
   constructor() {
     super();
@@ -124,6 +137,25 @@ class World extends EventEmitter {
     const app = this.apps.get(spec.appId);
     app?.sessions.set(spec.sessionId, spec);
     this.emit('app-content-shown', spec);
+  }
+  updateAppContentSpec(sessionId: string, patch: Partial<AppContentSpec>): AppContentSpec | undefined {
+    for (const a of this.apps.values()) {
+      const cur = a.sessions.get(sessionId);
+      if (!cur) continue;
+      const next = { ...cur, ...patch };
+      a.sessions.set(sessionId, next);
+      this.emit('app-content-updated', next);
+      return next;
+    }
+    return undefined;
+  }
+  bumpFrontendVersion(appId: string): number {
+    const n = (this.frontendVersions.get(appId) ?? 0) + 1;
+    this.frontendVersions.set(appId, n);
+    return n;
+  }
+  getFrontendVersion(appId: string): number {
+    return this.frontendVersions.get(appId) ?? 0;
   }
   appContentRemoved(sessionId: string, opts?: { replacing?: boolean }): void {
     const replacing = opts?.replacing ?? false;

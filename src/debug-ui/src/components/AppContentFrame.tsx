@@ -31,6 +31,23 @@ export function AppContentFrame({ spec }: { spec: AppContentSpec }) {
     + `&v=${reloadKey}`;
   const userNick = users.find(u => u.userId === spec.userId)?.nick ?? `#${spec.userId}`;
 
+  // Headerbar/Global modes always span the container width — only height is honored
+  // from `setSize`. Popup/Overlay honor both width and height.
+  const isFullWidth = spec.appViewMode === 'Headerbar' || spec.appViewMode === 'Global';
+  const iframeStyle: React.CSSProperties = {
+    width: isFullWidth ? '100%' : (spec.width || '100%'),
+    height: spec.height || 480,
+    minWidth: !isFullWidth ? spec.minWidth : undefined,
+    minHeight: spec.minHeight,
+    maxWidth: !isFullWidth ? spec.maxWidth : undefined,
+    maxHeight: spec.maxHeight,
+    background: spec.backgroundColor,
+    transition: spec.backgroundColorTransitionMs
+      ? `background-color ${spec.backgroundColorTransitionMs}ms`
+      : undefined,
+  };
+  const titleLabel = spec.title || `${spec.appId}/${spec.sessionId}`;
+
   return (
     <div className="app-frame">
       <div className="frame-header">
@@ -38,6 +55,7 @@ export function AppContentFrame({ spec }: { spec: AppContentSpec }) {
           <span className="pill">{spec.appViewMode}</span>
           {' '}<strong>{userNick}</strong>
           {' · '}<code>{spec.sessionId}</code>
+          {spec.title ? <> {' · '}<em>{spec.title}</em></> : null}
         </span>
         <span className="row">
           <button onClick={() => setReloadKey(k => k + 1)}>↻</button>
@@ -47,8 +65,8 @@ export function AppContentFrame({ spec }: { spec: AppContentSpec }) {
       <iframe ref={ref}
               key={reloadKey}
               src={url}
-              style={{ width: '100%', height: spec.height || 480 }}
-              title={`${spec.appId}/${spec.sessionId}`} />
+              style={iframeStyle}
+              title={titleLabel} />
     </div>
   );
 }

@@ -43,6 +43,8 @@ export function startHttpServer(): void {
         appId,
         nick: sim?.nick ?? 'Unknown',
         pageData: (spec?.pageData as Record<string, unknown>) ?? {},
+        appViewMode: spec?.appViewMode ?? 'Popup',
+        cacheInvalidationId: `${appId}-${world.getFrontendVersion(appId)}`,
         wsUrl: `ws://${req.headers.host}/__ws?channel=iframe&sessionId=${encodeURIComponent(sessionId)}`,
       });
       const inject = `<script>${shim}</script>`;

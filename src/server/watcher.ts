@@ -203,6 +203,7 @@ function onFileEvent(p: string, schedule: (id: string) => void): void {
     }
     const rel = path.relative(ext.appDir, p);
     if (rel.split(path.sep)[0] === 'www') {
+      world.bumpFrontendVersion(ext.registeredAppId);
       world.emit('frontend-changed', ext.registeredAppId);
       return;
     }
@@ -219,7 +220,10 @@ function onFileEvent(p: string, schedule: (id: string) => void): void {
   if (rel.startsWith('..') || path.isAbsolute(rel)) return;
   if (rel.split(path.sep)[1] === 'www') {
     const appId = rel.split(path.sep)[0];
-    if (appId) world.emit('frontend-changed', appId);
+    if (appId) {
+      world.bumpFrontendVersion(appId);
+      world.emit('frontend-changed', appId);
+    }
     return;
   }
   const appId = appIdFromInternalPath(p);

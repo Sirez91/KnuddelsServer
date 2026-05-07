@@ -23,6 +23,15 @@ export type AppContentSpec = {
   responsive: boolean;
   assetPath: string;
   pageData: Record<string, unknown>;
+  minWidth?: number;
+  minHeight?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  resizable?: boolean;
+  backgroundColor?: string;
+  backgroundColorTransitionMs?: number;
+  iconUrl?: string;
+  title?: string;
 };
 
 export type AppSnap = {
