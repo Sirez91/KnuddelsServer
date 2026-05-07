@@ -1,24 +1,118 @@
 import { EventEmitter } from 'node:events';
 import { PersistenceStore } from '../persistence/store.js';
 
+export type SimGender = 'Male' | 'Female' | 'Unknown';
+export type SimGenderDetailed = 'Male' | 'Female' | 'NonBinaryHe' | 'NonBinaryShe' | 'Unknown';
+export type SimUserStatus = 'Newbie' | 'Family' | 'Stammi' | 'HonoryMember' | 'Admin' | 'SystemBot' | 'Sysadmin';
+export type SimUserType = 'Human' | 'AppBot' | 'SystemBot';
+export type SimClientType = 'Applet' | 'Browser' | 'Android' | 'IOS' | 'Offline' | 'Web' | 'MobileWeb';
+export type SimChannelTalkPermission = 'NotInChannel' | 'Default' | 'TalkOnce' | 'TalkPermanent' | 'VIP' | 'Moderator';
+export type SimAuthenticityClassification = 'ServiceNotAvailable' | 'Unknown' | 'Trusted' | 'VeryTrusted';
+
 export type SimUser = {
   userId: number;
   nick: string;
-  gender: 'Male' | 'Female' | 'Unknown';
+  gender: SimGender;
   age: number;
-  status: 'Newbie' | 'Family' | 'Stammi' | 'HonoryMember' | 'Admin' | 'SystemBot' | 'Sysadmin';
-  userType: 'Human' | 'AppBot' | 'SystemBot';
+  status: SimUserStatus;
+  userType: SimUserType;
   isInChannel: boolean;
   /** True if this user owns the (single, simulated) channel — gates many App permission checks. */
   isChannelOwner: boolean;
   /** True if this user is an App-Manager (developer/admin of the app). */
   isAppManager: boolean;
+
+  // — Client connection
+  clientType: SimClientType;
+  isK3Client: boolean;
+
+  // — Identity (extended)
+  genderDetailed: SimGenderDetailed;
+  profilePhoto: string;
+  hasProfilePhoto: boolean;
+  isProfilePhotoVerified: boolean;
+  readme: string;
+  isAgeVerified: boolean;
+  authenticityClassification: SimAuthenticityClassification;
+
+  // — Time / activity (unix-ms for dates)
+  onlineMinutes: number;
+  regDate: number;
+  lastOnlineTime: number;
+
+  // — Channel role / permissions (independent flags)
+  isChannelModerator: boolean;
+  isChannelCoreUser: boolean;
+  isEventModerator: boolean;
+  isInTeam: boolean;
+  channelTalkPermission: SimChannelTalkPermission;
+
+  // — State flags
+  isAway: boolean;
+  isLocked: boolean;
+  isMuted: boolean;
+  isColorMuted: boolean;
+  isLikingChannel: boolean;
+  isStreamingVideo: boolean;
+
+  // — Knuddel (in Knuddel-Einheiten, nicht Cents)
+  knuddelAmount: number;
+  maxKnuddelToApp: number;
+
   /**
    * Per-app nicklist icons set via `User.addNicklistIcon`. Outer key = appId,
    * each entry one icon registration. Cleared when the owning app is unloaded.
    */
   nicklistIcons?: { [appId: string]: { imagePath: string; imageWidth: number }[] };
 };
+
+/**
+ * Defaults for all extended SimUser fields. Values match the previously
+ * hardcoded behavior of `makeUser()` in src/server/api/index.ts so adding
+ * the fields doesn't change runtime behavior for existing apps.
+ */
+export function defaultUserFields(opts?: { gender?: SimGender; isChannelOwner?: boolean }): Pick<
+  SimUser,
+  | 'clientType' | 'isK3Client'
+  | 'genderDetailed' | 'profilePhoto' | 'hasProfilePhoto' | 'isProfilePhotoVerified'
+  | 'readme' | 'isAgeVerified' | 'authenticityClassification'
+  | 'onlineMinutes' | 'regDate' | 'lastOnlineTime'
+  | 'isChannelModerator' | 'isChannelCoreUser' | 'isEventModerator' | 'isInTeam'
+  | 'channelTalkPermission'
+  | 'isAway' | 'isLocked' | 'isMuted' | 'isColorMuted' | 'isLikingChannel' | 'isStreamingVideo'
+  | 'knuddelAmount' | 'maxKnuddelToApp'
+> {
+  const gender = opts?.gender ?? 'Unknown';
+  const owner = opts?.isChannelOwner ?? false;
+  const now = Date.now();
+  return {
+    clientType: 'Web',
+    isK3Client: true,
+    genderDetailed: gender,
+    profilePhoto: '',
+    hasProfilePhoto: false,
+    isProfilePhotoVerified: false,
+    readme: '',
+    isAgeVerified: true,
+    authenticityClassification: 'Trusted',
+    onlineMinutes: 0,
+    regDate: now - 1000 * 60 * 60 * 24 * 30,
+    lastOnlineTime: now,
+    isChannelModerator: owner,
+    isChannelCoreUser: owner,
+    isEventModerator: false,
+    isInTeam: false,
+    channelTalkPermission: 'Default',
+    isAway: false,
+    isLocked: false,
+    isMuted: false,
+    isColorMuted: false,
+    isLikingChannel: true,
+    isStreamingVideo: false,
+    knuddelAmount: 1000,
+    maxKnuddelToApp: 10000,
+  };
+}
 
 export type AppContentSpec = {
   sessionId: string;
@@ -119,6 +213,7 @@ class World extends EventEmitter {
       isInChannel: true,
       isChannelOwner: false,
       isAppManager: true,
+      ...defaultUserFields({ gender: 'Unknown', isChannelOwner: false }),
     });
     [
       { nick: 'Anna',  gender: 'Female' as const, age: 27, owner: true,  appMgr: true  },
@@ -136,6 +231,7 @@ class World extends EventEmitter {
         isInChannel: false,
         isChannelOwner: u.owner,
         isAppManager: u.appMgr,
+        ...defaultUserFields({ gender: u.gender, isChannelOwner: u.owner }),
       });
       this.nextUserId = Math.max(this.nextUserId, id + 1);
     });

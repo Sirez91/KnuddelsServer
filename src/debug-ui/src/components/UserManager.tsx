@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { useStore } from '../store.js';
+import { useStore, type SimUser } from '../store.js';
 import { postJson } from '../api/http.js';
+import { UserEditModal } from './UserEditModal.js';
 
 export function UserManager() {
   const users = useStore(s => s.snapshot.users);
@@ -9,6 +10,7 @@ export function UserManager() {
   const [gender, setGender] = useState<'Male' | 'Female' | 'Unknown'>('Unknown');
   const [age, setAge] = useState(25);
   const [err, setErr] = useState<string | null>(null);
+  const [editingUserId, setEditingUserId] = useState<number | null>(null);
 
   async function addUser() {
     setErr(null);
@@ -29,9 +31,10 @@ export function UserManager() {
     if (!confirm('User wirklich löschen? Triggert onUserDeleted in allen Apps.')) return;
     await postJson('/api/debug/deleteUser', { userId });
   }
-  async function setFlag(userId: number, flag: 'isChannelOwner' | 'isAppManager', value: boolean) {
-    await postJson('/api/debug/setUserFlags', { userId, [flag]: value });
-  }
+
+  const editingUser: SimUser | undefined = editingUserId != null
+    ? users.find(u => u.userId === editingUserId)
+    : undefined;
 
   return (
     <div>
@@ -54,7 +57,7 @@ export function UserManager() {
         <h3>Users ({users.length})</h3>
         <table>
           <thead>
-            <tr><th>ID</th><th>Nick</th><th>Type</th><th>Status</th><th>Gender</th><th>Age</th><th>Rollen</th><th>im Channel</th><th></th></tr>
+            <tr><th>ID</th><th>Nick</th><th>Type</th><th>Status</th><th>Gender</th><th>Age</th><th>Client</th><th>im Channel</th><th></th></tr>
           </thead>
           <tbody>
             {users.map(u => (
@@ -76,23 +79,11 @@ export function UserManager() {
                 <td>{u.status}</td>
                 <td>{u.gender}</td>
                 <td>{u.age}</td>
-                <td>
-                  <div className="row" style={{ gap: 4, flexWrap: 'wrap' }}>
-                    <label className="row small" style={{ gap: 4 }}>
-                      <input type="checkbox"
-                             checked={u.isChannelOwner}
-                             onChange={e => setFlag(u.userId, 'isChannelOwner', e.target.checked)}
-                             style={{ width: 'auto' }} />
-                      <span>Owner</span>
-                    </label>
-                    <label className="row small" style={{ gap: 4 }}>
-                      <input type="checkbox"
-                             checked={u.isAppManager}
-                             onChange={e => setFlag(u.userId, 'isAppManager', e.target.checked)}
-                             style={{ width: 'auto' }} />
-                      <span>AppMgr</span>
-                    </label>
-                  </div>
+                <td className="small">
+                  {u.clientType}
+                  {u.isK3Client
+                    ? <span className="pill in" style={{ marginLeft: 6 }}>K3</span>
+                    : <span className="pill out" style={{ marginLeft: 6 }}>no K3</span>}
                 </td>
                 <td>
                   <span className={`pill ${u.isInChannel ? 'in' : 'out'}`}>
@@ -106,6 +97,7 @@ export function UserManager() {
                         {u.isInChannel ? 'Leave' : 'Join'}
                       </button>
                     )}
+                    <button onClick={() => setEditingUserId(u.userId)}>Bearbeiten</button>
                     {u.userId !== defaultBotId && u.userType === 'Human' && (
                       <button onClick={() => deleteUser(u.userId)}>Löschen</button>
                     )}
@@ -116,6 +108,10 @@ export function UserManager() {
           </tbody>
         </table>
       </div>
+
+      {editingUser && (
+        <UserEditModal user={editingUser} onClose={() => setEditingUserId(null)} />
+      )}
     </div>
   );
 }

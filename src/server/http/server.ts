@@ -46,6 +46,8 @@ export function startHttpServer(): void {
         appViewMode: spec?.appViewMode ?? 'Popup',
         cacheInvalidationId: `${appId}-${world.getFrontendVersion(appId)}`,
         wsUrl: `ws://${req.headers.host}/__ws?channel=iframe&sessionId=${encodeURIComponent(sessionId)}`,
+        clientType: sim?.clientType ?? 'Web',
+        isK3Client: sim?.isK3Client ?? true,
       });
       const inject = `<script>${shim}</script>`;
       const injected = html.includes('</head>')

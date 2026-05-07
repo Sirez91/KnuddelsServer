@@ -11,6 +11,8 @@ export function clientShimSource(opts: {
   appViewMode: string;
   cacheInvalidationId: string;
   wsUrl: string;
+  clientType: string;
+  isK3Client: boolean;
 }): string {
   const json = JSON.stringify(opts);
   return `
@@ -170,9 +172,9 @@ export function clientShimSource(opts: {
     dispatchEvent: ev => dispatch(ev.type, ev.data),
     sendEvent: (type, data) => send({ kind: 'event', type: type, data: data }),
     getNick: () => opts.nick,
-    getClientType: () => ClientType.Web,
+    getClientType: () => ClientType[opts.clientType] || ClientType.Web,
     getCacheInvalidationId: () => opts.cacheInvalidationId,
-    isK3Client: () => true,
+    isK3Client: () => opts.isK3Client,
     includeJS: function() {
       const args = Array.prototype.slice.call(arguments);
       args.forEach(loadScript);
