@@ -8,6 +8,7 @@ import { handleSlashCommand } from './ws-bridge.js';
 import {
   addExternalAppPath,
   listExternalTargets,
+  loadOrReload,
   removeExternalAppPath,
 } from '../watcher.js';
 import { pickFolderNative } from '../config/folder-picker.js';
@@ -336,6 +337,14 @@ export function registerDebugApi(app: Express): void {
     const hasMain = writes.some(w => w.rel === 'main.js');
     const hasConfig = writes.some(w => w.rel === 'app.config');
     res.json({ ok: true, appId, fileCount: writes.length, hasMain, hasConfig });
+  });
+
+  app.post('/api/debug/app/:appId/restart', (req, res) => {
+    const appId = safeAppId(req.params.appId);
+    if (!appId) return res.status(400).json({ error: 'invalid appId' });
+    if (!appRegistry.has(appId)) return res.status(404).json({ error: 'unknown appId' });
+    loadOrReload(appId);
+    res.json({ ok: true });
   });
 
   app.delete('/api/debug/app/:appId', (req, res) => {
